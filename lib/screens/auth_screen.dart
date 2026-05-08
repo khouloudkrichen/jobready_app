@@ -278,14 +278,18 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _googleSignIn() async {
-    final errorMessage = AppLocalizations.of(
-      context,
-    ).t('Connexion Google impossible.', 'Google sign-in failed.');
     setState(() => _loading = true);
     try {
       await FirebaseService.signInWithGoogle();
-    } catch (_) {
-      if (mounted) _showError(errorMessage);
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showError(_authError(e.code));
+    } catch (e) {
+      if (mounted) {
+        final l = AppLocalizations.of(context);
+        _showError(
+          l.t('Connexion Google impossible : $e', 'Google sign-in failed: $e'),
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -298,11 +302,24 @@ class _AuthScreenState extends State<AuthScreen>
       return;
     }
 
-    await FirebaseService.resetPassword(_loginEmail.text.trim());
-    if (!mounted) return;
-    _showSuccess(
-      l.t('Email de réinitialisation envoyé.', 'Password reset email sent.'),
-    );
+    setState(() => _loading = true);
+    try {
+      await FirebaseService.resetPassword(_loginEmail.text.trim());
+      if (!mounted) return;
+      _showSuccess(
+        l.t('Email de réinitialisation envoyé.', 'Password reset email sent.'),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (mounted) _showError(_authError(e.code));
+    } catch (e) {
+      if (mounted) {
+        _showError(
+          l.t('Envoi impossible : $e', 'Unable to send reset email: $e'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   String _authError(String code) {
@@ -321,6 +338,35 @@ class _AuthScreenState extends State<AuthScreen>
         return l.t('Mot de passe trop faible.', 'Password is too weak.');
       case 'invalid-email':
         return l.t('Email invalide.', 'Invalid email.');
+      case 'missing-email':
+        return l.t('Email obligatoire.', 'Email is required.');
+      case 'user-disabled':
+        return l.t('Ce compte est dÃ©sactivÃ©.', 'This account is disabled.');
+      case 'operation-not-allowed':
+        return l.t(
+          'Cette mÃ©thode de connexion nâ€™est pas activÃ©e dans Firebase.',
+          'This sign-in method is not enabled in Firebase.',
+        );
+      case 'too-many-requests':
+        return l.t(
+          'Trop de tentatives. RÃ©essayez plus tard.',
+          'Too many attempts. Try again later.',
+        );
+      case 'network-request-failed':
+        return l.t(
+          'ProblÃ¨me de connexion Internet.',
+          'Network connection problem.',
+        );
+      case 'account-exists-with-different-credential':
+        return l.t(
+          'Un compte existe dÃ©jÃ  avec cet email via une autre mÃ©thode.',
+          'An account already exists with this email using another method.',
+        );
+      case 'invalid-credential':
+        return l.t(
+          'Identifiants invalides ou expirÃ©s.',
+          'Invalid or expired credentials.',
+        );
       default:
         return code;
     }
