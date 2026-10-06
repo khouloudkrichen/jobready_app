@@ -1,8 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_language_id/google_mlkit_language_id.dart';
 
-/// ============================================================
-/// MODÈLE DE DONNÉES
-/// ============================================================
 class DetectedLanguage {
   final String code;
   final String name;
@@ -19,18 +17,19 @@ class DetectedLanguage {
   String get displayName => '$flag $name';
 
   @override
-  String toString() =>
-      '$flag $name (${(confidence * 100).toStringAsFixed(0)}%)';
+  String toString() {
+    final percent = (confidence * 100).toStringAsFixed(0);
+    return '$flag $name ($percent%)';
+  }
 }
 
-/// ============================================================
-/// SERVICE DE DÉTECTION
-/// ============================================================
 class LanguageDetectionService {
-  // Instance unique de l'identificateur avec un seuil de confiance de 0.4
-  static final _identifier = LanguageIdentifier(confidenceThreshold: 0.4);
+  static LanguageIdentifier? _identifier;
 
-  // Dictionnaire des noms de langues
+  static LanguageIdentifier get _languageIdentifier {
+    return _identifier ??= LanguageIdentifier(confidenceThreshold: 0.25);
+  }
+
   static const _langNames = <String, String>{
     'fr': 'Français',
     'en': 'Anglais',
@@ -44,7 +43,6 @@ class LanguageDetectionService {
     'tr': 'Turc',
   };
 
-  // Dictionnaire des drapeaux
   static const _langFlags = <String, String>{
     'fr': '🇫🇷',
     'en': '🇬🇧',
@@ -58,78 +56,104 @@ class LanguageDetectionService {
     'tr': '🇹🇷',
   };
 
-  /// Détecter la langue principale du texte
   static Future<DetectedLanguage> detectLanguage(String text) async {
-    if (text.trim().isEmpty) {
-      return const DetectedLanguage(
-        code: 'fr',
-        name: 'Français',
-        flag: '🇫🇷',
-        confidence: 0.0,
-      );
-    }
+    final normalized = _normalizeForDetection(text);
+    debugPrint(
+      'CV language detection OCR sample: ${_preview(normalized, max: 700)}',
+    );
+
+    if (normalized.isEmpty) return _fallback(confidence: 0.0);
 
     try {
-      // Analyse des 500 premiers caractères pour optimiser les performances
-      final sample = text.length > 500 ? text.substring(0, 500) : text;
-      final langCode = await _identifier.identifyLanguage(sample);
+      final sample = normalized.length > 2500
+          ? normalized.substring(0, 2500)
+          : normalized;
+      final candidates = await _languageIdentifier.identifyPossibleLanguages(
+        sample,
+      );
 
-      if (langCode == 'und') {
-        // 'und' signifie indéterminé -> Retour par défaut
-        return const DetectedLanguage(
-          code: 'fr',
-          name: 'Français',
-          flag: '🇫🇷',
-          confidence: 0.5,
-        );
+      final sorted = candidates.toList()
+        ..sort((a, b) => b.confidence.compareTo(a.confidence));
+
+      debugPrint(
+        'CV language candidates: ${sorted.map((l) => '${l.languageTag}:${l.confidence.toStringAsFixed(2)}').join(', ')}',
+      );
+
+      if (sorted.isNotEmpty && sorted.first.confidence >= 0.25) {
+        return _fromCode(sorted.first.languageTag, sorted.first.confidence);
       }
 
-      return DetectedLanguage(
-        code: langCode,
-        name: _langNames[langCode] ?? langCode.toUpperCase(),
-        flag: _langFlags[langCode] ?? '🌐',
-        confidence: 1.0,
-      );
+      final langCode = await _languageIdentifier.identifyLanguage(sample);
+      if (langCode == 'und') return _fallback(confidence: 0.0);
+
+      return _fromCode(langCode, 0.5);
     } catch (e) {
-      print("Erreur de détection ML Kit: $e");
-      return const DetectedLanguage(
-        code: 'fr',
-        name: 'Français',
-        flag: '🇫🇷',
-        confidence: 0.0,
-      );
+      debugPrint('CV language detection error: $e');
+      return _fallback(confidence: 0.0);
     }
   }
 
-  /// Détecter toutes les langues possibles avec leur score de confiance
   static Future<List<DetectedLanguage>> detectAllLanguages(String text) async {
-    if (text.trim().isEmpty) return [];
+    final normalized = _normalizeForDetection(text);
+    if (normalized.isEmpty) return [];
 
     try {
-      final sample = text.length > 500 ? text.substring(0, 500) : text;
-      final languages = await _identifier.identifyPossibleLanguages(sample);
+      final sample = normalized.length > 2500
+          ? normalized.substring(0, 2500)
+          : normalized;
+      final languages = await _languageIdentifier.identifyPossibleLanguages(
+        sample,
+      );
 
       return languages
-          .where(
-            (l) => l.confidence > 0.1,
-          ) // Filtrer les résultats peu probables
+          .where((language) => language.confidence > 0.1)
           .map(
-            (l) => DetectedLanguage(
-              code: l.languageTag,
-              name: _langNames[l.languageTag] ?? l.languageTag.toUpperCase(),
-              flag: _langFlags[l.languageTag] ?? '🌐',
-              confidence: l.confidence,
+            (language) => _fromCode(
+              language.languageTag,
+              language.confidence,
             ),
           )
           .toList();
     } catch (e) {
-      print("Erreur de détection multiple ML Kit: $e");
+      debugPrint('CV language multi-detection error: $e');
       return [];
     }
   }
 
-  /// Libérer les ressources
   static void dispose() {
-    _identifier.close();
+    _identifier?.close();
+    _identifier = null;
+  }
+
+  static DetectedLanguage _fromCode(String code, double confidence) {
+    return DetectedLanguage(
+      code: code,
+      name: _langNames[code] ?? code.toUpperCase(),
+      flag: _langFlags[code] ?? '🌐',
+      confidence: confidence,
+    );
+  }
+
+  static DetectedLanguage _fallback({required double confidence}) {
+    return DetectedLanguage(
+      code: 'fr',
+      name: _langNames['fr']!,
+      flag: _langFlags['fr']!,
+      confidence: confidence,
+    );
+  }
+
+  static String _normalizeForDetection(String text) {
+    return text
+        .replaceAll(RegExp(r'https?://\S+'), ' ')
+        .replaceAll(RegExp(r'\S+@\S+'), ' ')
+        .replaceAll(RegExp(r'\+?\d[\d\s().-]{6,}'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  static String _preview(String text, {required int max}) {
+    if (text.length <= max) return text;
+    return '${text.substring(0, max)}...';
   }
 }

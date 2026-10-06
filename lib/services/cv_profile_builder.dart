@@ -8,6 +8,7 @@
 // ============================================================
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/candidate_profile.dart';
@@ -39,7 +40,7 @@ class CvProfileBuilder {
         detectedCvLanguage: detectedCvLanguage,
       );
 
-      if (profile != null && profile.fullName.isNotEmpty) {
+      if (profile != null && _hasUsefulProfileData(profile)) {
         print("✅ Groq OK — nom: ${profile.fullName}");
         print("🌍 Langue profil: ${profile.detectedCvLanguage}");
         return profile;
@@ -61,6 +62,7 @@ class CvProfileBuilder {
     String ocrText, {
     String detectedCvLanguage = '',
   }) async {
+    final outputLanguage = _feedbackLanguageName(detectedCvLanguage);
     final prompt =
         '''
 Tu es un expert RH en analyse de CV.
@@ -71,11 +73,12 @@ Aucun markdown. Aucun commentaire. Aucun texte hors JSON.
 LANGUE DETECTEE DU CV :
 $detectedCvLanguage
 
-REGLE LANGUE :
-- Le profil doit être rédigé dans la même langue dominante que le CV.
-- Si le CV est en français, écris le profil en français.
-- Si le CV est en anglais, écris le profil en anglais.
-- Si le CV est en arabe, écris le profil en arabe.
+LANGUE A UTILISER POUR LE PROFIL ET LE FEEDBACK :
+$outputLanguage
+
+REGLE LANGUE STRICTE :
+- Tous les textes générés doivent être rédigés en $outputLanguage.
+- Cela inclut summary, profileTitle, mainDomain, secondaryDomains, softSkills, experiences.description, education.description, projects.description, certifications, associations et toutes les valeurs textuelles que tu reformules.
 - Ne traduis jamais : nom, email, téléphone, entreprises, écoles, technologies, liens.
 - Ne rajoute aucune information absente du CV.
 
@@ -114,10 +117,19 @@ RETOURNE EXACTEMENT CE JSON :
 
 REGLES STRICTES :
 1. fullName : nom complet du candidat uniquement. Ne prends jamais un slogan ou une phrase.
+   - Cherche en priorité dans les 5 premières lignes du CV, souvent en très gros texte.
+   - Le nom peut être en majuscules, mixte ou contenir un prénom + nom : "Khouloud KRICHIEN", "Emma Smith", "Hermann Schulz", "Nombre APELLIDO".
+   - Ne laisse fullName vide que si aucun nom candidat n'est visible.
 2. profileTitle : titre réel du CV. Exemple : HR Manager, Commercial, Développeur, Designer Graphique.
    - Ne mets jamais une qualité personnelle comme titre.
    - Ne mets jamais "Travailleuse", "Dynamique", "Rigoureux", "Results-oriented".
-3. summary : résumé court basé uniquement sur le CV. Pas d'évaluation. Pas de conseil. Pas de score.
+3. summary : obligatoire des qu'il existe assez d'informations exploitables dans le CV.
+   - Cherche les sections : PROFIL, PROFILE, OBJECTIVE, SUMMARY, ABOUT ME, PUESTO BUSCADO / OCUPADO, PERFIL, OBJETIVO, KURZPROFIL, BERUFLICHES PROFIL.
+   - Si cette section existe, reprends son contenu ou résume-le en 2 a 4 phrases dans la langue $outputLanguage.
+   - Si aucune section de presentation n'existe, genere un resume professionnel court de 2 a 3 phrases dans la langue $outputLanguage.
+   - Ce resume doit utiliser uniquement les informations visibles : titre, domaine, experiences, formation et competences.
+   - Pas d'évaluation. Pas de conseil. Pas de score. N'invente rien.
+   - Si le CV contient trop peu d'informations pour resumer correctement, mets "".
 4. mainDomain : domaine uniquement s'il est évident dans le CV.
    - Ne mets pas Data Science, UI/UX, Cybersecurity ou Software Engineering si ce n'est pas écrit ou clairement lié.
    - Si ce n'est pas clair, mets "".
@@ -126,6 +138,9 @@ REGLES STRICTES :
    - Ne mets jamais les bullet points seuls comme expériences.
    - Ne mets jamais les loisirs, langues, références ou centres d'intérêt dans experiences.
    - Une expérience doit avoir au minimum un poste ou une entreprise.
+   - IMPORTANT : si plusieurs stages/emplois sont listés sous la même section, crée une entrée séparée pour chaque poste.
+   - Exemple : "Stage d'initiation...", "Stage de Fin d'Etude...", "Stage d'été..." = 3 objets experiences séparés.
+   - Les dates peuvent être sur la droite du CV ; associe-les au poste correspondant sans fusionner deux stages.
 7. education : formations académiques uniquement.
    - Ne mets pas les numéros de téléphone dans période ou spécialité.
 8. projects : projets académiques/personnels/professionnels clairement présents.
@@ -146,6 +161,9 @@ REGLES STRICTES :
     - Exemples valides : Horse riding, Going to the theatre, Bénévolat, Randonnée, Triathlon.
 18. Aucune donnée inventée. Si absent : "" ou [].
 ''';
+
+    debugPrint('CV AI feedback language: $outputLanguage');
+    debugPrint('CV AI final prompt: $prompt');
 
     final response = await http
         .post(
@@ -250,13 +268,23 @@ REGLES STRICTES :
           .toList();
     }
 
-    final fullName = str('fullName');
+    final fallbackParsed = CvParserService.parse(originalText);
+    var fullName = str('fullName').isNotEmpty
+        ? str('fullName')
+        : ((fallbackParsed['fullName'] as String?) ?? '').trim();
+    var summary = str('summary').isNotEmpty
+        ? str('summary')
+        : ((fallbackParsed['summary'] as String?) ?? '').trim();
     final languageFromAi = str('detectedCvLanguage');
     final finalDetectedLanguage = languageFromAi.isNotEmpty
         ? languageFromAi
         : detectedCvLanguage;
+    final email = _cleanEmail(str('email'), originalText);
+    fullName = fullName.isNotEmpty
+        ? fullName
+        : _nameFromContact(email: email, linkedin: str('linkedin'));
 
-    final experiences = list(
+    final aiExperiences = list(
       'experiences',
       (m) => ExperienceItem(
         poste: (m['poste'] ?? '').toString().trim(),
@@ -266,6 +294,15 @@ REGLES STRICTES :
         technologies: _cleanStringList(m['technologies']),
       ),
     ).where(_isValidExperience).toList();
+    final fallbackExperiences = List<ExperienceItem>.from(
+      fallbackParsed['experiences'] ?? [],
+    ).where(_isValidExperience).toList();
+    final experiences = fallbackExperiences.length > aiExperiences.length
+        ? fallbackExperiences
+        : aiExperiences;
+    debugPrint(
+      'CV experiences count - AI: ${aiExperiences.length}, fallback: ${fallbackExperiences.length}, used: ${experiences.length}',
+    );
 
     final education = list(
       'education',
@@ -321,17 +358,33 @@ REGLES STRICTES :
         databases.length +
         tools.length +
         techSkills.length;
+    summary = summary.isNotEmpty
+        ? summary
+        : _buildGeneratedSummary(
+            detectedLanguage: finalDetectedLanguage,
+            profileTitle: _cleanTitle(str('profileTitle')),
+            mainDomain: mainDomain,
+            experiences: experiences,
+            education: education,
+            skills: [
+              ...progLangs,
+              ...frameworks,
+              ...databases,
+              ...tools,
+              ...techSkills,
+            ],
+          );
 
     return CandidateProfile(
       fullName: fullName,
-      email: str('email'),
+      email: email,
       phone: str('phone'),
-      location: str('location'),
+      location: _cleanLocation(str('location')),
       linkedin: str('linkedin'),
       github: str('github'),
       portfolio: str('portfolio'),
       profileTitle: _cleanTitle(str('profileTitle')),
-      summary: str('summary'),
+      summary: summary,
       detectedCvLanguage: finalDetectedLanguage,
       mainDomain: mainDomain,
       secondaryDomains: strList('secondaryDomains'),
@@ -377,13 +430,14 @@ REGLES STRICTES :
 
     final p = CvParserService.parse(rawOcrText);
 
-    final fullName = (p['fullName'] as String? ?? '').trim();
+    var fullName = (p['fullName'] as String? ?? '').trim();
     final email = (p['email'] as String? ?? '').trim();
     final phone = (p['phone'] as String? ?? '').trim();
     final location = (p['location'] as String? ?? '').trim();
     final linkedin = (p['linkedin'] as String? ?? '').trim();
     final github = (p['github'] as String? ?? '').trim();
     final portfolio = (p['portfolio'] as String? ?? '').trim();
+    var summary = (p['summary'] as String? ?? '').trim();
 
     final experiences = List<ExperienceItem>.from(
       p['experiences'] ?? [],
@@ -446,6 +500,10 @@ REGLES STRICTES :
     ).where((l) => l.langue.isNotEmpty && !_looksLikeNoise(l.langue)).toList();
 
     final associations = _cleanAssociations(p['associations'], fullName);
+    final cleanEmail = _cleanEmail(email, rawOcrText);
+    fullName = fullName.isNotEmpty
+        ? fullName
+        : _nameFromContact(email: cleanEmail, linkedin: linkedin);
 
     final totalSkills =
         progLangs.length +
@@ -453,6 +511,22 @@ REGLES STRICTES :
         databases.length +
         tools.length +
         techSkills.length;
+    summary = summary.isNotEmpty
+        ? summary
+        : _buildGeneratedSummary(
+            detectedLanguage: detectedCvLanguage,
+            profileTitle: '',
+            mainDomain: '',
+            experiences: experiences,
+            education: education,
+            skills: [
+              ...progLangs,
+              ...frameworks,
+              ...databases,
+              ...tools,
+              ...techSkills,
+            ],
+          );
 
     final nameConf = fullName.split(RegExp(r'\s+')).length >= 2
         ? 0.95
@@ -466,16 +540,16 @@ REGLES STRICTES :
 
     return CandidateProfile(
       fullName: fullName,
-      email: email,
+      email: cleanEmail,
       phone: phone,
-      location: location,
+      location: _cleanLocation(location),
       linkedin: linkedin,
       github: github,
       portfolio: portfolio,
 
-      // Fallback sécurisé : ne pas inventer
+      // Fallback sécurisé : ne pas inventer, mais conserver le résumé présent.
       profileTitle: '',
-      summary: '',
+      summary: summary,
       detectedCvLanguage: detectedCvLanguage,
       mainDomain: '',
       secondaryDomains: const [],
@@ -519,6 +593,191 @@ REGLES STRICTES :
     }
 
     return cleaned;
+  }
+
+  static bool _hasUsefulProfileData(CandidateProfile profile) {
+    return profile.fullName.isNotEmpty ||
+        profile.email.isNotEmpty ||
+        profile.phone.isNotEmpty ||
+        profile.summary.isNotEmpty ||
+        profile.profileTitle.isNotEmpty ||
+        profile.mainDomain.isNotEmpty ||
+        profile.experiences.isNotEmpty ||
+        profile.education.isNotEmpty ||
+        profile.projects.isNotEmpty ||
+        profile.allTechnicalSkills.isNotEmpty;
+  }
+
+  static String _feedbackLanguageName(String detectedCvLanguage) {
+    final lang = detectedCvLanguage.toLowerCase().trim();
+
+    if (lang.contains('english') || lang.contains('anglais') || lang == 'en') {
+      return 'English';
+    }
+    if (lang.contains('spanish') ||
+        lang.contains('espagnol') ||
+        lang.contains('español') ||
+        lang == 'es') {
+      return 'Spanish';
+    }
+    if (lang.contains('german') ||
+        lang.contains('allemand') ||
+        lang.contains('deutsch') ||
+        lang == 'de') {
+      return 'German';
+    }
+    if (lang.contains('arab') || lang.contains('arabe') || lang == 'ar') {
+      return 'Arabic';
+    }
+    if (lang.contains('italian') || lang.contains('italien') || lang == 'it') {
+      return 'Italian';
+    }
+    if (lang.contains('portuguese') ||
+        lang.contains('portugais') ||
+        lang == 'pt') {
+      return 'Portuguese';
+    }
+
+    return 'French';
+  }
+
+  static String _cleanEmail(String value, String originalText) {
+    final emailRx = RegExp(
+      r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}',
+      caseSensitive: false,
+    );
+
+    final fromValue = emailRx.firstMatch(value)?.group(0);
+    if (fromValue != null && fromValue.isNotEmpty) return fromValue;
+
+    final fromOcr = emailRx.firstMatch(originalText)?.group(0);
+    if (fromOcr != null && fromOcr.isNotEmpty) return fromOcr;
+
+    return value.trim();
+  }
+
+  static String _cleanLocation(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return '';
+
+    return v
+        .replaceAll(RegExp(r'\bMadid\b', caseSensitive: false), 'Madrid')
+        .replaceAll(RegExp(r'\bMadirid\b', caseSensitive: false), 'Madrid')
+        .replaceAll(RegExp(r'\bBerln\b', caseSensitive: false), 'Berlin')
+        .trim();
+  }
+
+  static String _nameFromContact({
+    required String email,
+    required String linkedin,
+  }) {
+    var source = '';
+    if (email.isNotEmpty) {
+      source = email.split('@').first;
+    } else if (linkedin.isNotEmpty) {
+      final parts = linkedin
+          .split('/')
+          .where((part) => part.trim().isNotEmpty)
+          .toList();
+      if (parts.isNotEmpty) source = parts.last.trim();
+    }
+    if (source.isEmpty) return '';
+
+    final cleaned = source
+        .replaceAll(RegExp(r'\d+'), '')
+        .replaceAll(RegExp(r'[_\-.]+'), ' ')
+        .trim();
+    final parts = cleaned
+        .split(RegExp(r'\s+'))
+        .where((part) => part.length >= 2)
+        .where((part) {
+          final lower = part.toLowerCase();
+          return !['mail', 'email', 'linkedin', 'in'].contains(lower);
+        })
+        .take(3)
+        .toList();
+    if (parts.length < 2) return '';
+
+    return parts
+        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
+        .join(' ');
+  }
+
+  static String _buildGeneratedSummary({
+    required String detectedLanguage,
+    required String profileTitle,
+    required String mainDomain,
+    required List<ExperienceItem> experiences,
+    required List<EducationItem> education,
+    required List<String> skills,
+  }) {
+    final language = _feedbackLanguageName(detectedLanguage);
+    final focus = profileTitle.isNotEmpty ? profileTitle : mainDomain;
+    final firstExperience = experiences.firstWhere(
+      (e) => e.poste.trim().isNotEmpty || e.entreprise.trim().isNotEmpty,
+      orElse: () => ExperienceItem(poste: '', entreprise: ''),
+    );
+    final firstEducation = education.firstWhere(
+      (e) => e.diplome.trim().isNotEmpty || e.etablissement.trim().isNotEmpty,
+      orElse: () => EducationItem(diplome: '', etablissement: ''),
+    );
+    final skillText = skills.take(4).join(', ');
+
+    if (focus.isEmpty &&
+        firstExperience.poste.isEmpty &&
+        firstExperience.entreprise.isEmpty &&
+        firstEducation.diplome.isEmpty &&
+        firstEducation.etablissement.isEmpty &&
+        skillText.isEmpty) {
+      return '';
+    }
+
+    final expText = [
+      firstExperience.poste,
+      firstExperience.entreprise,
+    ].where((e) => e.trim().isNotEmpty).join(' - ');
+    final eduText = [
+      firstEducation.diplome,
+      firstEducation.etablissement,
+    ].where((e) => e.trim().isNotEmpty).join(' - ');
+
+    if (language == 'English') {
+      final parts = <String>[];
+      if (focus.isNotEmpty) parts.add('Professional profile focused on $focus.');
+      if (expText.isNotEmpty) parts.add('Experience includes $expText.');
+      if (eduText.isNotEmpty) parts.add('Education includes $eduText.');
+      if (skillText.isNotEmpty) parts.add('Key skills include $skillText.');
+      return parts.take(3).join(' ');
+    }
+
+    if (language == 'Spanish') {
+      final parts = <String>[];
+      if (focus.isNotEmpty) parts.add('Perfil profesional orientado a $focus.');
+      if (expText.isNotEmpty) parts.add('Cuenta con experiencia en $expText.');
+      if (eduText.isNotEmpty) parts.add('Formacion destacada: $eduText.');
+      if (skillText.isNotEmpty) {
+        parts.add('Competencias principales: $skillText.');
+      }
+      return parts.take(3).join(' ');
+    }
+
+    if (language == 'German') {
+      final parts = <String>[];
+      if (focus.isNotEmpty) {
+        parts.add('Berufliches Profil mit Schwerpunkt $focus.');
+      }
+      if (expText.isNotEmpty) parts.add('Erfahrung in $expText.');
+      if (eduText.isNotEmpty) parts.add('Ausbildung: $eduText.');
+      if (skillText.isNotEmpty) parts.add('Wichtige Kenntnisse: $skillText.');
+      return parts.take(3).join(' ');
+    }
+
+    final parts = <String>[];
+    if (focus.isNotEmpty) parts.add('Profil professionnel oriente vers $focus.');
+    if (expText.isNotEmpty) parts.add('Experience detectee : $expText.');
+    if (eduText.isNotEmpty) parts.add('Formation detectee : $eduText.');
+    if (skillText.isNotEmpty) parts.add('Competences principales : $skillText.');
+    return parts.take(3).join(' ');
   }
 
   static List<String> _cleanStringList(dynamic raw) {

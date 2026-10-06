@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -60,11 +61,24 @@ class _CvScannerScreenState extends State<CvScannerScreen> {
         return;
       }
 
+      debugPrint(
+        'CV OCR extracted text: ${_logPreview(ocr.cleanedText, max: 1200)}',
+      );
+
       setState(() => _step = 2);
       final detectedLanguage = await LanguageDetectionService.detectLanguage(
         ocr.cleanedText,
       );
       setState(() => _detectedLang = detectedLanguage.displayName);
+      debugPrint(
+        'CV detected language: ${detectedLanguage.code} '
+        '${detectedLanguage.name} '
+        'confidence=${detectedLanguage.confidence.toStringAsFixed(2)}',
+      );
+      debugPrint(
+        'CV feedback language: ${detectedLanguage.name} '
+        '(${detectedLanguage.code})',
+      );
 
       setState(() => _step = 3);
       final CandidateProfile profile = await CvProfileBuilder.buildAsync(
@@ -185,6 +199,12 @@ class _CvScannerScreenState extends State<CvScannerScreen> {
       ),
     );
   }
+}
+
+String _logPreview(String text, {required int max}) {
+  final normalized = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (normalized.length <= max) return normalized;
+  return '${normalized.substring(0, max)}...';
 }
 
 class _PickPanel extends StatelessWidget {

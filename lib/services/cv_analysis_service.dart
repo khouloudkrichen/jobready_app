@@ -29,7 +29,8 @@ class CvAnalysisService {
       if (skillsCount > 0) 'Compétences détectées',
       if (experiencesCount > 0) 'Expériences détectées',
       if (projectsCount > 0) 'Projets détectés',
-      if (profile.detectedCvLanguage.trim().isNotEmpty) 'Langue du CV détectée',
+      if (profile.detectedCvLanguage.trim().isNotEmpty)
+        'Langue du CV détectée',
     ];
 
     final improvements = <String>[

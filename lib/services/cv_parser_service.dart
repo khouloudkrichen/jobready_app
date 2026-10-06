@@ -33,6 +33,7 @@ class CvParserService {
       'linkedin': _extractLinkedIn(cleaned),
       'github': _extractGitHub(cleaned),
       'portfolio': _extractPortfolio(cleaned),
+      'summary': _extractSummary(sections),
       'experiences': _extractExperiences(sections, text),
       'education': _extractEducation(sections, text),
       'projects': _extractProjects(sections, text),
@@ -87,6 +88,12 @@ class CvParserService {
       'parcours professionnel',
       'employment',
       'career',
+      'experiencia laboral',
+      'experiencia profesional',
+      'experiencia',
+      'berufserfahrung',
+      'arbeitserfahrung',
+      'werdegang',
     ],
     'education': [
       'formation académique',
@@ -101,6 +108,14 @@ class CvParserService {
       'academic',
       'qualifications',
       'diplomas',
+      'estudios',
+      'formacion',
+      'formación',
+      'educacion',
+      'educación',
+      'ausbildung',
+      'studium',
+      'bildungsweg',
     ],
     'skills': [
       'compétences techniques',
@@ -111,6 +126,14 @@ class CvParserService {
       'competences',
       'aptitudes',
       'expertise',
+      'habilidades',
+      'informatica',
+      'informática',
+      'software',
+      'fahigkeiten',
+      'fähigkeiten',
+      'kenntnisse',
+      'kompetenzen',
     ],
     'languages': [
       'langues maîtrisées',
@@ -119,6 +142,8 @@ class CvParserService {
       'langue',
       'linguistic skills',
       'spoken languages',
+      'idiomas',
+      'sprachen',
     ],
     'projects': [
       'projets académiques',
@@ -130,6 +155,12 @@ class CvParserService {
       'personal projects',
       'academic projects',
       'portfolio',
+      'proyectos',
+      'proyecto',
+      'proyectos academicos',
+      'proyectos académicos',
+      'projekte',
+      'projekt',
     ],
     'certifications': [
       'certifications',
@@ -150,6 +181,16 @@ class CvParserService {
       'à propos',
       'profile',
       'présentation',
+      'puesto buscado',
+      'puesto ocupado',
+      'objetivo',
+      'perfil',
+      'presentacion',
+      'presentación',
+      'kurzprofil',
+      'profil beruflich',
+      'berufliches profil',
+      'ziel',
     ],
     'interests': [
       'loisirs',
@@ -160,6 +201,9 @@ class CvParserService {
       'activities',
       'vie associative',
       'associative',
+      'hobbies',
+      'intereses',
+      'interessen',
     ],
   };
 
@@ -201,6 +245,38 @@ class CvParserService {
     return null;
   }
 
+  static String _extractSummary(Map<String, List<String>> sections) {
+    final lines = sections['summary'] ?? [];
+    if (lines.isEmpty) return '';
+
+    final kept = <String>[];
+    for (final line in lines) {
+      final clean = line.trim();
+      if (clean.isEmpty) continue;
+      if (_detectSectionKey(clean) != null) break;
+      if (_isPeriodLine(clean)) break;
+      if (_isContactLine(clean)) continue;
+      if (clean.length < 8) continue;
+
+      kept.add(clean);
+      if (kept.join(' ').length >= 420) break;
+    }
+
+    return kept.join(' ').trim();
+  }
+
+  static bool _isContactLine(String line) {
+    final lower = line.toLowerCase();
+    return line.contains('@') ||
+        lower.contains('linkedin') ||
+        lower.contains('github') ||
+        lower.contains('telephone') ||
+        lower.contains('téléphone') ||
+        lower.contains('phone') ||
+        lower.contains('adresse') ||
+        lower.contains('address');
+  }
+
   // ═══════════════════════════════════════════════════════════
   // NOM — universel : Prénom NOM / PRÉNOM NOM / prénom nom
   // ═══════════════════════════════════════════════════════════
@@ -226,6 +302,7 @@ class CvParserService {
         continue;
       if (RegExp(r'\d').hasMatch(line)) continue;
       if (_detectSectionKey(line) != null) continue;
+      if (_isJobTitle(line) || _looksLikeSummarySentence(line)) continue;
 
       final parts = line.split(RegExp(r'\s+'));
       if (parts.length < 2 || parts.length > 4) continue;
@@ -239,6 +316,31 @@ class CvParserService {
       }
     }
     return '';
+  }
+
+  static bool _looksLikeSummarySentence(String line) {
+    final lower = line.toLowerCase();
+    final bad = [
+      'results-oriented',
+      'result oriented',
+      'motivated',
+      'experienced',
+      'professional',
+      'passionnée',
+      'passionne',
+      'passionate',
+      'autonome',
+      'adaptable',
+      'objective',
+      'objectif',
+      'seeking',
+      'looking for',
+      'committed',
+      'apasionada',
+      'experiencia',
+      'erfahrung',
+    ];
+    return bad.any((word) => lower.contains(word));
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -258,7 +360,11 @@ class CvParserService {
     );
     // Prendre le premier match qui ressemble à un vrai numéro (≥ 8 chiffres)
     for (final m in rx.allMatches(text)) {
-      final digits = m.group(0)!.replaceAll(RegExp(r'\D'), '');
+      final raw = m.group(0)!.trim();
+      if (RegExp(r'^\s*(19|20)\d{2}\s*[-–—]\s*(19|20)\d{2}\s*$').hasMatch(raw)) {
+        continue;
+      }
+      final digits = raw.replaceAll(RegExp(r'\D'), '');
       if (digits.length >= 8) return m.group(0)!.trim();
     }
     return '';
@@ -446,6 +552,13 @@ class CvParserService {
       final line = sectionLines[i];
       final lower = line.toLowerCase();
 
+      if (_isJobTitle(line) && _hasPeriod(line)) {
+        flush();
+        poste = _removePeriod(line).trim();
+        period = _extractPeriod(line);
+        continue;
+      }
+
       // Ligne de date seule → marque une nouvelle entrée
       if (_isPeriodLine(line)) {
         // Si la date est sur la même ligne que le titre (ex: "Stage X  07/2025 – 08/2025")
@@ -489,7 +602,197 @@ class CvParserService {
     }
     flush();
 
+    final stageResult = _stageExperiencesFromLines(sectionLines);
+    final fullTextStageResult = _stageExperiencesFromText(fullText);
+    final bestStageResult = fullTextStageResult.length > stageResult.length
+        ? fullTextStageResult
+        : stageResult;
+    if (bestStageResult.length > result.length) return bestStageResult;
+
     return result.isNotEmpty ? result : _experienceFallback(fullText);
+  }
+
+  static List<ExperienceItem> _stageExperiencesFromText(String text) {
+    final lines = text
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    final lineResult = _stageExperiencesFromLines(lines);
+    final patternResult = _stageExperiencesFromPattern(text);
+    return patternResult.length > lineResult.length ? patternResult : lineResult;
+  }
+
+  static List<ExperienceItem> _stageExperiencesFromPattern(String text) {
+    final folded = _foldForMatching(text);
+    final stageRx = RegExp(
+      r"stage\s+d(?:e\s+|[' ]?)(?:initiation|ete|fin|pfe)[^\r\n]{0,140}",
+      caseSensitive: false,
+    );
+    final matches = stageRx.allMatches(folded).toList();
+    if (matches.isEmpty) return [];
+
+    final result = <ExperienceItem>[];
+    for (var i = 0; i < matches.length; i++) {
+      final start = matches[i].start;
+      var end = i + 1 < matches.length ? matches[i + 1].start : text.length;
+      final stop = _nextStopSectionIndex(folded, start);
+      if (stop != -1 && stop > start && stop < end) end = stop;
+
+      final segment = text.substring(start, end).trim();
+      final lines = segment
+          .split(RegExp(r'\r?\n'))
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      if (lines.isEmpty) continue;
+
+      final titleLine = lines.first;
+      final item = _stageItemFromTitleAndLines(titleLine, lines.skip(1));
+      if (item.poste.trim().isNotEmpty) result.add(item);
+    }
+
+    return result;
+  }
+
+  static int _nextStopSectionIndex(String foldedText, int start) {
+    final stopRx = RegExp(
+      r'\n\s*(projet|formation|competence|vie associative|langue)\b',
+      caseSensitive: false,
+    );
+    final match = stopRx.firstMatch(foldedText.substring(start));
+    return match == null ? -1 : start + match.start;
+  }
+
+  static List<ExperienceItem> _stageExperiencesFromLines(List<String> lines) {
+    final result = <ExperienceItem>[];
+    String poste = '';
+    String company = '';
+    String period = '';
+    final desc = <String>[];
+
+    void flush() {
+      if (poste.isEmpty) return;
+      result.add(
+        ExperienceItem(
+          poste: poste,
+          entreprise: company,
+          periode: period,
+          description: desc.join(' ').trim(),
+          technologies: _techsIn(desc.join(' ')),
+        ),
+      );
+      poste = '';
+      company = '';
+      period = '';
+      desc.clear();
+    }
+
+    bool isStageStart(String line) {
+      final lower = _foldForMatching(line).trim();
+      return RegExp(
+        r"^stage\s+d[' ]?(initiation|ete|fin|pfe)",
+        caseSensitive: false,
+      ).hasMatch(lower) ||
+          lower.startsWith('stage de ') ||
+          lower.startsWith("stage d'") ||
+          lower.startsWith('stage d ');
+    }
+
+    bool isStopSection(String line) {
+      final lower = _foldForMatching(line).trim();
+      return lower.startsWith('projet') ||
+          lower.startsWith('formation') ||
+          lower.startsWith('competence') ||
+          lower.startsWith('vie associative') ||
+          lower.startsWith('langue');
+    }
+
+    void setStageLine(String line) {
+      final item = _stageItemFromTitleAndLines(line, const []);
+      poste = item.poste;
+      company = item.entreprise;
+      period = item.periode;
+    }
+
+    for (final line in lines) {
+      if (line.trim().isEmpty) continue;
+      if (isStopSection(line)) {
+        if (poste.isNotEmpty) break;
+        continue;
+      }
+
+      if (isStageStart(line)) {
+        flush();
+        setStageLine(line);
+        continue;
+      }
+
+      if (poste.isEmpty) continue;
+
+      if (_isPeriodLine(line)) {
+        period = _extractPeriod(line);
+        continue;
+      }
+
+      if (company.isEmpty && _isCompanyLine(line)) {
+        company = line.trim();
+        continue;
+      }
+
+      desc.add(line.trim());
+    }
+    flush();
+
+    return result;
+  }
+
+  static ExperienceItem _stageItemFromTitleAndLines(
+    String titleLine,
+    Iterable<String> followingLines,
+  ) {
+    final titlePart = titleLine
+        .replaceAll(_periodRx, '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .replaceAll(RegExp(r'^[\-–—]+|[\-–—]+$'), '')
+        .trim();
+    final normalized = titlePart
+        .replaceAll('–', '-')
+        .replaceAll('—', '-')
+        .replaceAll('‑', '-');
+    final splitIndex = normalized.indexOf('-');
+
+    var poste = normalized.trim();
+    var company = '';
+    if (splitIndex > 0 && splitIndex < normalized.length - 1) {
+      poste = normalized.substring(0, splitIndex).trim();
+      company = normalized.substring(splitIndex + 1).trim();
+    }
+
+    var period = _extractPeriod(titleLine);
+    final desc = <String>[];
+
+    for (final rawLine in followingLines) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      if (_isPeriodLine(line)) {
+        if (period.isEmpty) period = _extractPeriod(line);
+        continue;
+      }
+      if (company.isEmpty && _isCompanyLine(line)) {
+        company = line;
+        continue;
+      }
+      desc.add(line);
+    }
+
+    return ExperienceItem(
+      poste: poste,
+      entreprise: company,
+      periode: period,
+      description: desc.join(' ').trim(),
+      technologies: _techsIn(desc.join(' ')),
+    );
   }
 
   static List<ExperienceItem> _experienceFallback(String text) {
@@ -811,6 +1114,8 @@ class CvParserService {
     return (matches >= 1 && line.length < 60) || hasToday;
   }
 
+  static bool _hasPeriod(String line) => _periodRx.hasMatch(line);
+
   static String _extractPeriod(String line) {
     // Ex: "07/2025 – 08/2025", "2021-2024", "jan 2023 – présent"
     final rx = RegExp(
@@ -828,6 +1133,27 @@ class CvParserService {
 
   static String _removePeriod(String line) {
     return line.replaceAll(_periodRx, '').replaceAll(RegExp(r'[-]'), '').trim();
+  }
+
+  static String _foldForMatching(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('é', 'e')
+        .replaceAll('è', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ë', 'e')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ä', 'a')
+        .replaceAll('î', 'i')
+        .replaceAll('ï', 'i')
+        .replaceAll('ô', 'o')
+        .replaceAll('ö', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll('û', 'u')
+        .replaceAll('ü', 'u')
+        .replaceAll('ç', 'c')
+        .replaceAll('’', "'");
   }
 
   static bool _isJobTitle(String line) {
@@ -860,7 +1186,13 @@ class CvParserService {
         .replaceAll('ô', 'o')
         .replaceAll('û', 'u')
         .replaceAll('î', 'i');
-    return kw.any((k) => lower.contains(k)) && line.length < 120;
+    if (kw.any((k) => lower.contains(k)) && line.length < 120) return true;
+
+    final stageLike = RegExp(
+      r"^stage\s+d['’]?(initiation|ete|été|fin|pfe)",
+      caseSensitive: false,
+    );
+    return stageLike.hasMatch(lower) && line.length < 140;
   }
 
   static bool _isCompanyLine(String line) {

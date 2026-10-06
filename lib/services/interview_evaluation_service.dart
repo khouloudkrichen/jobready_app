@@ -1,6 +1,6 @@
 // ============================================================
 // interview_evaluation_service.dart
-// Évaluation des réponses d'entretien avec Groq
+// Evaluation des reponses d'entretien avec Groq
 // ============================================================
 
 import 'dart:convert';
@@ -29,23 +29,46 @@ class InterviewEvaluationResult {
 
   factory InterviewEvaluationResult.fallback() {
     return InterviewEvaluationResult(
-      hardSkillsScore: 6,
-      communicationScore: 6,
-      structureScore: 6,
+      hardSkillsScore: 2,
+      communicationScore: 2,
+      structureScore: 2,
       globalFeedback:
-          'Les réponses sont correctes. Pour progresser, il faut donner plus d’exemples concrets, expliquer les technologies utilisées et mieux structurer les réponses.',
-      strengths: [
-        'Le candidat a répondu à toutes les questions.',
-        'Les réponses montrent une compréhension générale du parcours.',
-      ],
+          'L evaluation IA est limitee. Le candidat doit donner des reponses plus completes, avec des exemples concrets et une structure plus claire.',
+      strengths: ['Quelques elements ont ete captures.'],
       improvements: [
-        'Ajouter plus de détails techniques.',
-        'Structurer les réponses avec contexte, action et résultat.',
+        'Repondre directement a chaque question.',
+        'Ajouter plus de details techniques.',
+        'Structurer les reponses avec contexte, action et resultat.',
       ],
       advice: [
-        'Préparer des exemples précis de projets.',
-        'Expliquer clairement le rôle joué dans chaque expérience.',
-        'Mentionner les technologies utilisées et les résultats obtenus.',
+        'Preparer des exemples precis de projets.',
+        'Expliquer clairement le role joue dans chaque experience.',
+        'Mentionner les technologies utilisees et les resultats obtenus.',
+      ],
+    );
+  }
+
+  factory InterviewEvaluationResult.limited({required int answeredCount}) {
+    final hasSomeAnswers = answeredCount > 0;
+
+    return InterviewEvaluationResult(
+      hardSkillsScore: hasSomeAnswers ? 2 : 0,
+      communicationScore: hasSomeAnswers ? 2 : 0,
+      structureScore: hasSomeAnswers ? 1 : 0,
+      globalFeedback:
+          'Evaluation limitee : le candidat a donne seulement $answeredCount reponse(s) exploitable(s). Le score reste volontairement bas car il manque assez de contenu oral pour evaluer l entretien correctement.',
+      strengths: hasSomeAnswers
+          ? ['Debut de participation detecte.']
+          : ['Aucune reponse exploitable detectee.'],
+      improvements: [
+        'Repondre a davantage de questions.',
+        'Donner des exemples concrets lies au CV.',
+        'Structurer chaque reponse avec contexte, action et resultat.',
+      ],
+      advice: [
+        'Preparer une reponse courte pour chaque experience et projet.',
+        'Parler au moins 30 secondes par question importante.',
+        'Eviter de passer les questions sans reponse.',
       ],
     );
   }
@@ -100,7 +123,7 @@ class InterviewEvaluationAnswer {
 }
 
 class InterviewEvaluationService {
-  // Remplace par ta vraie clé Groq.
+  // Remplace par ta vraie cle Groq.
   // Ne la publie jamais sur GitHub.
   static const _groqApiKey = String.fromEnvironment('GROQ_API_KEY');
 
@@ -112,7 +135,11 @@ class InterviewEvaluationService {
     required List<InterviewEvaluationAnswer> answers,
   }) async {
     if (answers.isEmpty) {
-      return InterviewEvaluationResult.fallback();
+      return InterviewEvaluationResult.limited(answeredCount: 0);
+    }
+
+    if (answers.length < 3) {
+      return InterviewEvaluationResult.limited(answeredCount: answers.length);
     }
 
     try {
@@ -127,13 +154,13 @@ class InterviewEvaluationService {
             },
             body: jsonEncode({
               'model': _groqModel,
-              'temperature': 0.1,
+              'temperature': 0.05,
               'max_tokens': 2500,
               'messages': [
                 {
                   'role': 'system',
                   'content':
-                      'Tu es un recruteur technique. Tu évalues les réponses d’un candidat de façon juste, simple et pédagogique. Tu réponds uniquement en JSON valide.',
+                      'Tu es un recruteur technique strict mais juste. Tu evalues uniquement les reponses orales donnees, pas le CV seul. Tu reponds uniquement en JSON valide.',
                 },
                 {'role': 'user', 'content': prompt},
               ],
@@ -171,17 +198,17 @@ class InterviewEvaluationService {
     final answersJson = answers.map((a) => a.toJson()).toList();
 
     return '''
-Évalue cet entretien de candidat.
+Evalue cet entretien de candidat.
 
 PROFIL CANDIDAT :
 Nom : ${profile.fullName}
 Titre : ${profile.profileTitle}
 Domaine : ${profile.mainDomain}
-Compétences : ${profile.allTechnicalSkills.join(', ')}
-Expériences : ${profile.experiences.map((e) => '${e.poste} chez ${e.entreprise}').join(' | ')}
+Competences : ${profile.allTechnicalSkills.join(', ')}
+Experiences : ${profile.experiences.map((e) => '${e.poste} chez ${e.entreprise}').join(' | ')}
 Projets : ${profile.projects.map((p) => p.nom).join(' | ')}
 
-RÉPONSES DU CANDIDAT :
+REPONSES DU CANDIDAT :
 ${jsonEncode(answersJson)}
 
 Retourne uniquement ce JSON :
@@ -196,15 +223,20 @@ Retourne uniquement ce JSON :
   "advice": []
 }
 
-RÈGLES :
-- Les scores doivent être entre 0 et 10.
-- hardSkillsScore évalue la qualité technique des réponses.
-- communicationScore évalue la clarté et la précision.
-- structureScore évalue si les réponses sont bien organisées.
-- Ne sois pas trop sévère si le candidat est étudiant.
+REGLES STRICTES :
+- Les scores doivent etre entre 0 et 10.
+- hardSkillsScore evalue la qualite technique des reponses orales.
+- communicationScore evalue la clarte, la precision et la coherence.
+- structureScore evalue si les reponses sont organisees avec contexte, action et resultat.
+- Evalue uniquement ce qui est dit dans les reponses, pas ce qui existe dans le CV.
+- Si une reponse est vague, hors sujet, trop courte ou incomprehensible, elle doit etre fortement penalisee.
+- Ne donne pas un bon score parce que le CV semble bon.
+- Ne mentionne un point fort que s'il est clairement demontre dans les reponses.
+- Si les reponses manquent de details, les scores doivent rester bas meme si le candidat est etudiant.
+- Pour une evaluation LinkedIn/presentation projet, sois professionnel, exigeant et credible.
 - Ne donne pas de diagnostic psychologique.
 - Donne un feedback simple, utile et professionnel.
-- Réponds dans la langue dominante du profil candidat.
+- Reponds dans la langue dominante du profil candidat.
 - Aucune phrase hors JSON.
 ''';
   }

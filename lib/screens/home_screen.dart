@@ -6,8 +6,89 @@ import '../services/app_localizations.dart';
 import '../services/firebase_service.dart';
 import '../widgets/app_design.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<List<Map<String, dynamic>>> _profilesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _profilesFuture = _loadProfiles();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadProfiles() async {
+    final profiles = await FirebaseService.getProfiles();
+    return _dedupeProfiles(profiles);
+  }
+
+  Future<void> _refreshProfiles() async {
+    setState(() {
+      _profilesFuture = _loadProfiles();
+    });
+    await _profilesFuture;
+  }
+
+  List<Map<String, dynamic>> _dedupeProfiles(
+    List<Map<String, dynamic>> values,
+  ) {
+    final seen = <String>{};
+    final result = <Map<String, dynamic>>[];
+
+    for (final profile in values) {
+      final id = (profile['id'] ?? '').toString();
+      final fallbackKey =
+          '${profile['fullName'] ?? ''}-${profile['email'] ?? ''}-${profile['phone'] ?? ''}';
+      final key = id.isNotEmpty ? id : fallbackKey;
+      if (seen.add(key)) result.add(profile);
+    }
+
+    return result;
+  }
+
+  Future<void> _confirmDelete(Map<String, dynamic> profile) async {
+    final name = (profile['fullName'] ?? 'ce profil').toString().trim();
+    final delete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer ce profil ?'),
+        content: Text(
+          name.isEmpty
+              ? 'Cette action supprimera ce profil de votre historique.'
+              : 'Cette action supprimera "$name" de votre historique.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (delete != true) return;
+
+    final id = (profile['id'] ?? '').toString();
+    if (id.isEmpty) return;
+
+    await FirebaseService.deleteProfile(id);
+    if (!mounted) return;
+    await _refreshProfiles();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profil supprimé')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,15 +96,13 @@ class HomeScreen extends StatelessWidget {
 
     return AppScaffold(
       body: SafeArea(
-        child: FutureBuilder<CandidateProfile?>(
-          future: FirebaseService.getLastProfile(),
+        child: FutureBuilder<List<Map<String, dynamic>>>(
+          future: _profilesFuture,
           builder: (context, snapshot) {
-            final lastProfile = snapshot.data;
+            final profiles = snapshot.data ?? const <Map<String, dynamic>>[];
 
             return RefreshIndicator(
-              onRefresh: () async {
-                await FirebaseService.getLastProfile();
-              },
+              onRefresh: _refreshProfiles,
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
                 children: [
@@ -94,8 +173,16 @@ class HomeScreen extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
-                  else if (lastProfile != null)
-                    _LastProfileCard(profile: lastProfile)
+                  else if (profiles.isNotEmpty)
+                    _ProfilesList(
+                      profiles: profiles,
+                      onOpen: (profile) => Navigator.pushNamed(
+                        context,
+                        '/cv-result',
+                        arguments: CandidateProfile.fromJson(profile),
+                      ),
+                      onDelete: _confirmDelete,
+                    )
                   else
                     _EmptyProfileCard(
                       onScan: () => Navigator.pushNamed(context, '/cv-scanner'),
@@ -109,7 +196,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  static String _firstName() {
+  String _firstName() {
     final name = FirebaseAuth.instance.currentUser?.displayName?.trim();
     if (name == null || name.isEmpty) return 'vous';
     return name.split(RegExp(r'\s+')).first;
@@ -275,6 +362,128 @@ class _ActionCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _ProfilesList extends StatelessWidget {
+  final List<Map<String, dynamic>> profiles;
+  final ValueChanged<Map<String, dynamic>> onOpen;
+  final ValueChanged<Map<String, dynamic>> onDelete;
+
+  const _ProfilesList({
+    required this.profiles,
+    required this.onOpen,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionTitle(title: 'Profils analysés', trailing: '${profiles.length}'),
+        ...profiles.map(
+          (profile) => _ProfileHistoryCard(
+            profile: profile,
+            onOpen: () => onOpen(profile),
+            onDelete: () => onDelete(profile),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileHistoryCard extends StatelessWidget {
+  final Map<String, dynamic> profile;
+  final VoidCallback onOpen;
+  final VoidCallback onDelete;
+
+  const _ProfileHistoryCard({
+    required this.profile,
+    required this.onOpen,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (profile['fullName'] ?? '').toString().trim();
+    final title = (profile['profileTitle'] ?? '').toString().trim();
+    final domain = (profile['mainDomain'] ?? '').toString().trim();
+    final displayTitle = title.isNotEmpty
+        ? title
+        : (domain.isNotEmpty ? domain : 'Profil détecté');
+    final initials = _initials(name);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        onTap: onOpen,
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: AppDesign.violet.withOpacity(0.12),
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  color: AppDesign.violet,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name.isEmpty ? 'Profil candidat' : name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppDesign.textColor(context),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    displayTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppDesign.mutedText(context),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Ouvrir',
+              icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+              onPressed: onOpen,
+            ),
+            IconButton(
+              tooltip: 'Supprimer',
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _initials(String value) {
+    final clean = value.trim();
+    if (clean.isEmpty) return '?';
+    final parts = clean.split(RegExp(r'\s+'));
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 }
 

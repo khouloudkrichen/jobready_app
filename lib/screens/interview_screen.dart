@@ -22,6 +22,8 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 
 import '../models/candidate_profile.dart';
+import '../services/firebase_service.dart';
+import '../services/interview_evaluation_service.dart';
 import '../services/interview_question_service.dart';
 import '../services/speech_answer_service.dart';
 import '../widgets/app_design.dart';
@@ -646,6 +648,7 @@ class _InterviewScreenState extends State<InterviewScreen>
   Widget build(BuildContext context) {
     if (_isFinished) {
       return _FinishedView(
+        profile: widget.profile,
         difficulty: widget.difficulty,
         questions: _questions,
         answers: _answers,
@@ -783,141 +786,112 @@ class _InterviewScreenState extends State<InterviewScreen>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 11),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withOpacity(0.55)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.18),
-              blurRadius: 16,
-              offset: const Offset(0, 7),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 3,
-                backgroundColor: const Color(0xFFE5E7EB),
-                valueColor: const AlwaysStoppedAnimation<Color>(_primary),
+      child: GestureDetector(
+        onTap: _showFullQuestion,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 9, 12, 10),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.90),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.55)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.16),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Question ${_currentQuestionIndex + 1}',
-                    style: const TextStyle(
-                      color: _primary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  backgroundColor: const Color(0xFFE5E7EB),
+                  valueColor: const AlwaysStoppedAnimation<Color>(_primary),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 9,
+                      vertical: 5,
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 9,
-                    vertical: 5,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    widget.difficulty.label,
-                    style: const TextStyle(
-                      color: Color(0xFF374151),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    _currentQuestion.category,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.black.withOpacity(0.45),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                IconButton(
-                  tooltip: 'Question complète',
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 30,
-                    minHeight: 30,
-                  ),
-                  onPressed: _showFullQuestion,
-                  icon: const Icon(Icons.open_in_full_rounded, size: 16),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: Text(
-                    _currentQuestion.question,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF111827),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      height: 1.18,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                SizedBox(
-                  height: 34,
-                  child: OutlinedButton.icon(
-                    onPressed: _speakQuestion,
-                    icon: const Icon(Icons.volume_up_rounded, size: 15),
-                    label: const Text('Écouter'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _primary,
-                      side: BorderSide(color: _primary.withOpacity(0.35)),
-                      padding: const EdgeInsets.symmetric(horizontal: 9),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w800,
+                    child: Text(
+                      'Question ${_currentQuestionIndex + 1}',
+                      style: const TextStyle(
+                        color: _primary,
                         fontSize: 11,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      '${widget.difficulty.label} - ${_currentQuestion.category}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.black.withOpacity(0.45),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Ecouter',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
+                    onPressed: _speakQuestion,
+                    icon: const Icon(
+                      Icons.volume_up_rounded,
+                      color: _primary,
+                      size: 18,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Question complete',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 30,
+                      minHeight: 30,
+                    ),
+                    onPressed: _showFullQuestion,
+                    icon: const Icon(Icons.open_in_full_rounded, size: 16),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _currentQuestion.question,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF111827),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  height: 1.18,
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1137,7 +1111,8 @@ class _InterviewScreenState extends State<InterviewScreen>
 // Rapport final
 // ============================================================
 
-class _FinishedView extends StatelessWidget {
+class _FinishedView extends StatefulWidget {
+  final CandidateProfile profile;
   final InterviewDifficulty difficulty;
   final List<InterviewQuestion> questions;
   final List<String> answers;
@@ -1146,6 +1121,7 @@ class _FinishedView extends StatelessWidget {
   final VoidCallback onRestart;
 
   const _FinishedView({
+    required this.profile,
     required this.difficulty,
     required this.questions,
     required this.answers,
@@ -1154,20 +1130,38 @@ class _FinishedView extends StatelessWidget {
     required this.onRestart,
   });
 
+  @override
+  State<_FinishedView> createState() => _FinishedViewState();
+}
+
+class _FinishedViewState extends State<_FinishedView> {
   static const Color _primary = Color(0xFF183B63);
+
+  Future<InterviewEvaluationResult>? _aiEvaluationFuture;
+
+  CandidateProfile get profile => widget.profile;
+  InterviewDifficulty get difficulty => widget.difficulty;
+  List<InterviewQuestion> get questions => widget.questions;
+  List<String> get answers => widget.answers;
+  double get cameraPresencePercent => widget.cameraPresencePercent;
+  VoidCallback get onBackToProfile => widget.onBackToProfile;
+  VoidCallback get onRestart => widget.onRestart;
 
   @override
   Widget build(BuildContext context) {
     final report = _buildReport();
-    final globalScore = report.realAnswers == 0
+    _aiEvaluationFuture ??= _loadAiEvaluation();
+    final answerScore =
+        ((report.hardSkills + report.communication + report.structure) / 30) *
+        85;
+    final cameraScore = (cameraPresencePercent.clamp(0, 70) / 100) * 15;
+    final rawGlobalScore = report.realAnswers == 0
         ? 0
-        : (((report.hardSkills + report.communication + report.structure) /
-                          30) *
-                      70 +
-                  (cameraPresencePercent / 100) * 30)
-              .round()
-              .clamp(0, 100)
-              .toInt();
+        : (answerScore + cameraScore).round().clamp(0, 100).toInt();
+    final globalScore = min(
+      rawGlobalScore,
+      _globalScoreCap(report.realAnswers),
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF0F4FF),
@@ -1283,6 +1277,10 @@ class _FinishedView extends StatelessWidget {
                   : const Color(0xFFEF4444),
             ),
             const SizedBox(height: 12),
+            _AiEvaluationSection(future: _aiEvaluationFuture!),
+            const SizedBox(height: 12),
+            _QuestionReviewBox(questions: questions, answers: answers),
+            const SizedBox(height: 12),
             _InfoBox(
               icon: Icons.auto_awesome_rounded,
               title: 'Feedback global',
@@ -1338,6 +1336,71 @@ class _FinishedView extends StatelessWidget {
     );
   }
 
+  Future<InterviewEvaluationResult> _loadAiEvaluation() {
+    final evaluationAnswers = <InterviewEvaluationAnswer>[];
+
+    for (var i = 0; i < questions.length && i < answers.length; i++) {
+      final answer = answers[i].trim();
+      if (!_isRealInterviewAnswer(answer)) continue;
+
+      evaluationAnswers.add(
+        InterviewEvaluationAnswer(
+          question: questions[i].question,
+          category: questions[i].category,
+          answer: answer,
+        ),
+      );
+    }
+
+    return _evaluateAndSave(evaluationAnswers);
+  }
+
+  Future<InterviewEvaluationResult> _evaluateAndSave(
+    List<InterviewEvaluationAnswer> evaluationAnswers,
+  ) async {
+    final result = await InterviewEvaluationService.evaluate(
+      profile: profile,
+      answers: evaluationAnswers,
+    );
+
+    await _saveInterviewReport(result, evaluationAnswers);
+
+    return result;
+  }
+
+  Future<void> _saveInterviewReport(
+    InterviewEvaluationResult result,
+    List<InterviewEvaluationAnswer> evaluationAnswers,
+  ) async {
+    try {
+      final profileKey = profile.email.trim().isNotEmpty
+          ? profile.email.trim()
+          : profile.fullName.trim();
+
+      await FirebaseService.saveInterviewReport(
+        profileId: profileKey,
+        report: {
+          'profileName': profile.fullName,
+          'profileTitle': profile.profileTitle,
+          'difficulty': difficulty.label,
+          'totalQuestions': questions.length,
+          'realAnswers': evaluationAnswers.length,
+          'cameraPresencePercent': cameraPresencePercent.round(),
+          'hardSkillsScore': result.hardSkillsScore,
+          'communicationScore': result.communicationScore,
+          'structureScore': result.structureScore,
+          'globalFeedback': result.globalFeedback,
+          'strengths': result.strengths,
+          'improvements': result.improvements,
+          'advice': result.advice,
+          'answers': evaluationAnswers.map((a) => a.toJson()).toList(),
+        },
+      );
+    } catch (e) {
+      debugPrint('Interview report save error: $e');
+    }
+  }
+
   _InterviewReport _buildReport() {
     final realAnswers = answers.where(_isRealInterviewAnswer).length;
     final noRealAnswers = realAnswers == 0;
@@ -1386,16 +1449,20 @@ class _FinishedView extends StatelessWidget {
         : "Le candidat possède une base intéressante. Pour progresser, les réponses doivent être plus détaillées, mieux structurées et appuyées par des exemples réels.";
 
     final strengths = noRealAnswers
-        ? ['Aucun point fort détecté car aucune réponse exploitable.']
+        ? ['Aucun point fort detecte car aucune reponse exploitable.']
+        : realAnswers < 3
+        ? [
+            'Debut de participation detecte, mais le contenu reste insuffisant pour valider un vrai point fort.',
+          ]
         : [
             if (hard >= 5)
-              'Compétences techniques présentes dans les réponses'
+              'Competences techniques presentes dans les reponses'
             else
-              'Début de réponse technique détecté',
+              'Quelques elements techniques a approfondir',
             if (realAnswers >= 5)
-              'Participation régulière aux questions'
+              'Participation reguliere aux questions'
             else
-              'Quelques réponses exploitables',
+              'Participation partielle a l entretien',
           ];
 
     final improvements = noRealAnswers
@@ -1454,21 +1521,21 @@ class _FinishedView extends StatelessWidget {
       }
     }
 
-    int score = 3;
+    int score = technicalAnswered > 0 ? 2 : 1;
 
-    if (technicalAnswered >= 1) score += 2;
+    if (technicalAnswered >= 1) score += 1;
     if (technicalAnswered >= 2) score += 2;
-    if (avgWords >= 30) score += 1;
-    if (avgWords >= 55) score += 1;
+    if (avgWords >= 35) score += 1;
+    if (avgWords >= 60) score += 2;
 
     return score.clamp(0, 10);
   }
 
   int _baseCommunicationScore(int avgWords) {
-    if (avgWords < 5) return 1;
-    if (avgWords < 15) return 3;
-    if (avgWords < 30) return 5;
-    if (avgWords < 55) return 7;
+    if (avgWords < 8) return 1;
+    if (avgWords < 20) return 2;
+    if (avgWords < 35) return 4;
+    if (avgWords < 60) return 6;
     return 8;
   }
 
@@ -1498,9 +1565,9 @@ class _FinishedView extends StatelessWidget {
     final hits = structureWords.where((w) => joined.contains(w)).length;
 
     if (hits >= 4) return 8;
-    if (hits >= 2) return 6;
-    if (hits >= 1) return 4;
-    return 3;
+    if (hits >= 2) return 5;
+    if (hits >= 1) return 3;
+    return 1;
   }
 
   int _scoreWithAnswerPenalty({
@@ -1514,6 +1581,16 @@ class _FinishedView extends StatelessWidget {
     if (realAnswers <= 4) return originalScore.clamp(0, 5);
     if (realAnswers <= 6) return originalScore.clamp(0, 7);
     return originalScore.clamp(0, 10);
+  }
+
+  int _globalScoreCap(int realAnswers) {
+    if (realAnswers <= 0) return 0;
+    if (realAnswers == 1) return 15;
+    if (realAnswers == 2) return 25;
+    if (realAnswers <= 4) return 45;
+    if (realAnswers <= 6) return 65;
+    if (realAnswers <= 8) return 80;
+    return 100;
   }
 }
 
@@ -1842,6 +1919,223 @@ class _LimitedEvaluationBanner extends StatelessWidget {
   }
 }
 
+class _AiEvaluationSection extends StatelessWidget {
+  final Future<InterviewEvaluationResult> future;
+
+  const _AiEvaluationSection({required this.future});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<InterviewEvaluationResult>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: const Color(0xFF6366F1).withOpacity(0.16)),
+            ),
+            child: const Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Analyse IA des réponses en cours...',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final result = snapshot.data ?? InterviewEvaluationResult.fallback();
+        final aiAverage =
+            ((result.hardSkillsScore +
+                        result.communicationScore +
+                        result.structureScore) /
+                    3)
+                .round()
+                .clamp(0, 10)
+                .toInt();
+        final items = <String>[
+          result.globalFeedback,
+          if (result.strengths.isNotEmpty)
+            'Point fort : ${result.strengths.first}',
+          if (result.improvements.isNotEmpty)
+            'À améliorer : ${result.improvements.first}',
+          if (result.advice.isNotEmpty) 'Conseil : ${result.advice.first}',
+        ].where((item) => item.trim().isNotEmpty).toList();
+
+        return Column(
+          children: [
+            _ScoreCard(
+              icon: Icons.auto_awesome_rounded,
+              title: 'Évaluation IA',
+              score: aiAverage,
+              subtitle:
+                  'Hard skills ${result.hardSkillsScore}/10 · Communication ${result.communicationScore}/10 · Structure ${result.structureScore}/10',
+              scoreText: '$aiAverage/10',
+              color: const Color(0xFF6366F1),
+            ),
+            _InfoBox(
+              icon: Icons.psychology_alt_rounded,
+              title: 'Synthèse IA',
+              color: const Color(0xFF6366F1),
+              items: items.isEmpty
+                  ? ['Aucune synthèse IA disponible pour cette simulation.']
+                  : items,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _QuestionReviewBox extends StatelessWidget {
+  final List<InterviewQuestion> questions;
+  final List<String> answers;
+
+  const _QuestionReviewBox({required this.questions, required this.answers});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFF183B63).withOpacity(0.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.fact_check_rounded, color: Color(0xFF183B63)),
+              SizedBox(width: 10),
+              Text(
+                'Revue des réponses',
+                style: TextStyle(
+                  color: Color(0xFF183B63),
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          for (var i = 0; i < questions.length; i++)
+            _QuestionReviewItem(
+              index: i + 1,
+              question: questions[i],
+              answer: i < answers.length ? answers[i] : '',
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuestionReviewItem extends StatelessWidget {
+  final int index;
+  final InterviewQuestion question;
+  final String answer;
+
+  const _QuestionReviewItem({
+    required this.index,
+    required this.question,
+    required this.answer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAnswer = _isRealInterviewAnswer(answer);
+    final color = hasAnswer ? const Color(0xFF10B981) : const Color(0xFFF59E0B);
+    final words = _wordCount(answer);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                child: Center(
+                  child: Text(
+                    '$index',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  question.category,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Text(
+                hasAnswer ? '$words mots' : 'Passée',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Text(
+            question.question,
+            style: const TextStyle(
+              color: Color(0xFF111827),
+              fontWeight: FontWeight.w900,
+              height: 1.25,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            hasAnswer ? answer.trim() : 'Aucune réponse exploitable.',
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.black.withOpacity(0.58),
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _InfoBox extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1994,18 +2288,33 @@ bool _isRealInterviewAnswer(String answer) {
     'non',
     'nothing',
     'rien',
+    'aucune reponse',
     'aucune réponse',
     'error_no_match',
   };
 
   if (badAnswers.contains(clean)) return false;
 
+  final noisePatterns = [
+    'je sais pas',
+    'je ne sais pas',
+    'aucune idee',
+    'aucune idée',
+    'pas de reponse',
+    'pas de réponse',
+    'i do not know',
+    "i don't know",
+    'no answer',
+  ];
+
+  if (noisePatterns.any(clean.contains)) return false;
+
   final words = clean
       .split(RegExp(r'\s+'))
       .where((word) => word.trim().length > 1)
       .toList();
 
-  return words.length >= 3;
+  return words.length >= 8;
 }
 
 int _wordCount(String text) {

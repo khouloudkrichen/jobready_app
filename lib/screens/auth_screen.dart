@@ -20,6 +20,7 @@ class _AuthScreenState extends State<AuthScreen>
   final _signupName = TextEditingController();
   final _signupEmail = TextEditingController();
   final _signupPassword = TextEditingController();
+  final _signupConfirmPassword = TextEditingController();
 
   bool _loading = false;
   bool _obscure = true;
@@ -41,6 +42,7 @@ class _AuthScreenState extends State<AuthScreen>
     _signupName.dispose();
     _signupEmail.dispose();
     _signupPassword.dispose();
+    _signupConfirmPassword.dispose();
     super.dispose();
   }
 
@@ -111,6 +113,7 @@ class _AuthScreenState extends State<AuthScreen>
                                   name: _signupName,
                                   email: _signupEmail,
                                   password: _signupPassword,
+                                  confirmPassword: _signupConfirmPassword,
                                   obscure: _obscure,
                                   onToggle: () =>
                                       setState(() => _obscure = !_obscure),
@@ -132,89 +135,22 @@ class _AuthScreenState extends State<AuthScreen>
                                 : Icons.person_add_alt_rounded,
                             onPressed: _tab.index == 0 ? _login : _signup,
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              const Expanded(child: Divider()),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                ),
-                                child: Text(
-                                  l.t('ou', 'or').toUpperCase(),
-                                  style: const TextStyle(
-                                    color: AppDesign.muted,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                              const Expanded(child: Divider()),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: OutlinedButton.icon(
-                              onPressed: _googleSignIn,
-                              icon: const Icon(
-                                Icons.g_mobiledata_rounded,
-                                size: 30,
-                              ),
-                              label: Text(
-                                l.t(
-                                  'Continuer avec Google',
-                                  'Continue with Google',
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppDesign.ink,
-                                side: const BorderSide(
-                                  color: Color(0xFFD7DEE9),
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(15),
-                                ),
-                                textStyle: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                            ),
-                          ),
                           if (_tab.index == 0)
-                            TextButton(
-                              onPressed: _resetPassword,
-                              child: Text(
-                                l.t(
-                                  'Mot de passe oublié ?',
-                                  'Forgot password?',
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: TextButton(
+                                onPressed: _resetPassword,
+                                child: Text(
+                                  l.t(
+                                    'Mot de passe oublié ?',
+                                    'Forgot password?',
+                                  ),
                                 ),
                               ),
                             ),
                         ],
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 22),
-                  const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.verified_user_outlined,
-                        color: AppDesign.muted,
-                        size: 16,
-                      ),
-                      SizedBox(width: 7),
-                      Text(
-                        'Sécurisé par CareerBoost Cloud',
-                        style: TextStyle(
-                          color: AppDesign.muted,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
@@ -249,7 +185,8 @@ class _AuthScreenState extends State<AuthScreen>
     final l = AppLocalizations.of(context);
     if (_signupName.text.trim().isEmpty ||
         _signupEmail.text.trim().isEmpty ||
-        _signupPassword.text.isEmpty) {
+        _signupPassword.text.isEmpty ||
+        _signupConfirmPassword.text.isEmpty) {
       _showError(l.t('Remplissez tous les champs.', 'Fill in all fields.'));
       return;
     }
@@ -258,6 +195,15 @@ class _AuthScreenState extends State<AuthScreen>
         l.t(
           'Mot de passe minimum 6 caractères.',
           'Password must be at least 6 characters.',
+        ),
+      );
+      return;
+    }
+    if (_signupPassword.text != _signupConfirmPassword.text) {
+      _showError(
+        l.t(
+          'Les mots de passe ne correspondent pas.',
+          'Passwords do not match.',
         ),
       );
       return;
@@ -277,34 +223,46 @@ class _AuthScreenState extends State<AuthScreen>
     }
   }
 
-  Future<void> _googleSignIn() async {
-    setState(() => _loading = true);
-    try {
-      await FirebaseService.signInWithGoogle();
-    } on FirebaseAuthException catch (e) {
-      if (mounted) _showError(_authError(e.code));
-    } catch (e) {
-      if (mounted) {
-        final l = AppLocalizations.of(context);
-        _showError(
-          l.t('Connexion Google impossible : $e', 'Google sign-in failed: $e'),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
   Future<void> _resetPassword() async {
     final l = AppLocalizations.of(context);
-    if (_loginEmail.text.trim().isEmpty) {
-      _showError(l.t('Entrez votre email d’abord.', 'Enter your email first.'));
+    final emailController = TextEditingController(
+      text: _loginEmail.text.trim(),
+    );
+    final email = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l.t('Mot de passe oublié', 'Forgot password')),
+        content: TextField(
+          controller: emailController,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(
+            labelText: 'Adresse Email',
+            hintText: 'nom@exemple.com',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(l.t('Annuler', 'Cancel')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, emailController.text.trim()),
+            child: Text(l.t('Envoyer', 'Send')),
+          ),
+        ],
+      ),
+    );
+    emailController.dispose();
+
+    if (email == null) return;
+    if (email.trim().isEmpty) {
+      _showError(l.t('Entrez votre email.', 'Enter your email.'));
       return;
     }
 
     setState(() => _loading = true);
     try {
-      await FirebaseService.resetPassword(_loginEmail.text.trim());
+      await FirebaseService.resetPassword(email.trim());
       if (!mounted) return;
       _showSuccess(
         l.t('Email de réinitialisation envoyé.', 'Password reset email sent.'),
@@ -321,7 +279,6 @@ class _AuthScreenState extends State<AuthScreen>
       if (mounted) setState(() => _loading = false);
     }
   }
-
   String _authError(String code) {
     final l = AppLocalizations.of(context);
     switch (code) {
@@ -446,6 +403,7 @@ class _SignupForm extends StatelessWidget {
   final TextEditingController name;
   final TextEditingController email;
   final TextEditingController password;
+  final TextEditingController confirmPassword;
   final bool obscure;
   final VoidCallback onToggle;
 
@@ -453,6 +411,7 @@ class _SignupForm extends StatelessWidget {
     required this.name,
     required this.email,
     required this.password,
+    required this.confirmPassword,
     required this.obscure,
     required this.onToggle,
   });
@@ -481,6 +440,15 @@ class _SignupForm extends StatelessWidget {
           controller: password,
           label: l.t('Mot de passe', 'Password'),
           hint: '••••••••',
+          icon: Icons.lock_outline_rounded,
+          obscure: obscure,
+          onToggle: onToggle,
+        ),
+        const SizedBox(height: 12),
+        _Field(
+          controller: confirmPassword,
+          label: l.t('Confirmer le mot de passe', 'Confirm password'),
+          hint: '********',
           icon: Icons.lock_outline_rounded,
           obscure: obscure,
           onToggle: onToggle,

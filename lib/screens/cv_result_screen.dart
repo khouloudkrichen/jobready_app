@@ -262,10 +262,7 @@ class _AnalysisTab extends StatelessWidget {
                   _CheckLine('Téléphone détecté', analysis.hasPhone),
                   _CheckLine('LinkedIn détecté', analysis.hasLinkedIn),
                   _CheckLine('GitHub détecté', analysis.hasGitHub),
-                  _CheckLine(
-                    'Compétences détectées',
-                    analysis.skillsCount >= 3,
-                  ),
+                  _CheckLine('Compétences détectées', analysis.skillsCount >= 3),
                   _CheckLine(
                     'Expériences détectées',
                     analysis.experiencesCount > 0,
@@ -623,7 +620,9 @@ class _CvScoreLevel {
   factory _CvScoreLevel.fromScore(int score) {
     if (score <= 39)
       return const _CvScoreLevel('À améliorer', Color(0xFFEF4444));
-    if (score <= 69) return const _CvScoreLevel('Correct', Color(0xFFF59E0B));
+    if (score <= 69) {
+      return const _CvScoreLevel('Correct', Color(0xFFF59E0B));
+    }
     if (score <= 84) return const _CvScoreLevel('Bon', AppDesign.violet);
     return const _CvScoreLevel('Excellent', Color(0xFF10B981));
   }
